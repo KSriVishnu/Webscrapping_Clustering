@@ -1,0 +1,194 @@
+
+##### IMPORT STATEMENTS #####
+
+from bs4 import BeautifulSoup as soup
+import pandas as pd
+from urllib.request import urlopen as uReq
+import numpy as np
+import urllib
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cluster import KMeans
+import matplotlib.pyplot as plt
+import requests
+import random 
+from collections import OrderedDict
+
+
+### CREATING AN USER-AGENT #####
+
+headers_list = [
+    # Firefox 77 Mac
+     {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:77.0) Gecko/20100101 Firefox/77.0",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Referer": "https://www.google.com/",
+        "DNT": "1",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1"
+    },
+    # Firefox 77 Windows
+    {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:77.0) Gecko/20100101 Firefox/77.0",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Referer": "https://www.google.com/",
+        "DNT": "1",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1"
+    },
+    # Chrome 83 Mac
+    {
+        "Connection": "keep-alive",
+        "DNT": "1",
+        "Upgrade-Insecure-Requests": "1",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.97 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Dest": "document",
+        "Referer": "https://www.google.com/",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8"
+    },
+    # Chrome 83 Windows 
+    {
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.97 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-User": "?1",
+        "Sec-Fetch-Dest": "document",
+        "Referer": "https://www.google.com/",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Accept-Language": "en-US,en;q=0.9"
+    }
+]
+# Create ordered dict from Headers above
+ordered_headers_list = []
+for headers in headers_list:
+    h = OrderedDict()
+    for header,value in headers.items():
+        h[header]=value
+    ordered_headers_list.append(h)
+
+
+    ##### LOADING THE LIST OF WEBSITES FROM CSV FILE,SCRAPPING THE DATA FROM EACH WEBISTE AND SAVING IT IN "result" #####
+
+result=[]
+exceptions=[]
+
+list_open = open("websites.csv")
+read_list = list_open.read()
+line_in_list = read_list.split("\n")
+for url in line_in_list:
+    
+    for i in range(1,4):
+        #Pick a random browser headers
+        headers = random.choice(headers_list)
+        #Create a request session
+        r = requests.Session()
+        r.headers = headers
+        response = r.get(url)
+        
+        try:
+            Uclient = uReq(url)
+            page_html=Uclient.read()
+            beautifulsoup = soup(page_html)
+            
+            # kill all script and style elements
+            for script in beautifulsoup(["script", "style"]):
+                script.extract()    # rip it out
+            # get text
+            text = beautifulsoup.get_text()
+            
+            # break into lines and remove leading and trailing space on each
+            lines = (line.strip() for line in text.splitlines())
+            
+            # break multi-headlines into a line each
+            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+            
+            # drop blank lines
+            text = '\n'.join(chunk for chunk in chunks if chunk)
+            result.append(text)
+            
+        except Exception as e:
+            #Error handling
+            exceptions.append(e)
+
+### CHECKING THE RESPONSE WHEN EACH TIME THE URL HIT ####
+
+        print("Request #%d\nUser-Agent Sent:%s\n\nHeaders Recevied by HTTPBin:"%(i,headers['User-Agent']))
+        print(response)
+        print("-------------------")
+
+
+#### TO CHECK THE LENGTH OF THE RESULT LIST AND EXCEPTIONS LIST ####
+
+print(len(result))
+print(len(exceptions))
+
+
+#### DETERMINING THE NUMBER OF CLUSTERS USING ELBOW METHOD #####
+
+vectorizer = TfidfVectorizer()
+X = vectorizer.fit_transform(result)
+
+ks = range(1, 20)
+inertias = []
+for k in ks:
+    # Create a KMeans instance with k clusters: model
+    model = KMeans(n_clusters=k)
+    
+    # Fit model to samples
+    model.fit(X)
+    
+    # Append the inertia to the list of inertias
+    inertias.append(model.inertia_)
+    
+plt.plot(ks, inertias, '-o', color='black')
+plt.xlabel('number of clusters, k')
+plt.ylabel('inertia')
+plt.xticks(ks)
+plt.show()
+
+
+##### THE ABOVE GRAPH DETERMINES THE REQUIRED NUMBER OF CLUSTERS #####
+
+true_k = 13
+model = KMeans(n_clusters=true_k, init='k-means++', max_iter=100, n_init=1)
+model.fit(X)
+
+print("Top terms per cluster:")
+order_centroids = model.cluster_centers_.argsort()[:, ::-1]
+terms = vectorizer.get_feature_names()
+for i in range(true_k):
+    print("Cluster %d:" % i),
+    for ind in order_centroids[i, :10]:
+        print(' %s' % terms[ind]),
+    print
+
+print("\n")
+print("Prediction")
+
+
+#### EXAMPLES TO CHECK THE PREDICTION OF CLUSTERS ###
+
+Y = vectorizer.transform(["Estoy buscando un trabajo"])
+prediction = model.predict(Y)
+print(prediction)
+
+Y = vectorizer.transform(["Ich suche eine Stelle"])
+prediction = model.predict(Y)
+print(prediction)
+
+Y = vectorizer.transform(["Rakastan sinua paljon."])
+prediction = model.predict(Y)
+print(prediction)
+
+Y = vectorizer.transform(["How are you?"])
+prediction = model.predict(Y)
+print(prediction)
